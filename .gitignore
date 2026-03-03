@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+CLAUDE.md
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 敏感文件 / 服务器生成的文件（不提交）
+*.conf
+*.key
+*.psk
+wg-manager-settings.json
+clients/
+
+# 日志
+*.log

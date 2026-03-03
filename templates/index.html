@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WireGuard Manager</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+  :root {
+    --bg:      #0d1117;
+    --surface: #161b22;
+    --border:  #30363d;
+    --text:    #e6edf3;
+    --muted:   #7d8590;
+    --green:   #2ea043;
+    --green-b: #238636;
+    --blue:    #1f6feb;
+    --red:     #da3633;
+    --accent:  #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; }
+
+  /* ── Nav ── */
+  .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .topbar .brand { font-weight: 700; font-size: 1.1rem; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+  .topbar .iface-badge { background: var(--border); color: var(--muted); border-radius: 6px; padding: 2px 10px; font-size: .8rem; font-family: monospace; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .status-dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .status-dot.stopped { background: var(--red); }
+  .ms-auto { margin-left: auto; }
+
+  /* ── Interface info strip ── */
+  .iface-strip { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 24px; display: flex; gap: 32px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); }
+  .iface-strip .item { display: flex; flex-direction: column; gap: 2px; }
+  .iface-strip .label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .iface-strip .val   { color: var(--text); font-family: monospace; }
+
+  /* ── Main ── */
+  .main { padding: 24px; }
+  .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .section-header h5 { margin: 0; font-size: 1rem; font-weight: 600; }
+  .peer-count { background: var(--border); color: var(--muted); border-radius: 12px; padding: 1px 9px; font-size: .78rem; }
+
+  /* ── Table ── */
+  .wg-table { width: 100%; border-collapse: collapse; }
+  .wg-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: left; font-weight: 500; }
+  .wg-table td { padding: 12px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: .88rem; }
+  .wg-table tr:last-child td { border-bottom: none; }
+  .wg-table tr:hover td { background: rgba(255,255,255,.03); }
+  .wg-table .mono { font-family: monospace; font-size: .82rem; color: var(--muted); }
+
+  /* ── Peer status ── */
+  .peer-online  { color: #3fb950; font-size: .78rem; }
+  .peer-offline { color: var(--muted); font-size: .78rem; }
+  .peer-name    { font-weight: 500; }
+
+  /* ── Buttons ── */
+  .btn-wg { background: var(--blue); color: #fff; border: none; border-radius: 6px; padding: 7px 16px; font-size: .85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-wg:hover { background: #388bfd; }
+  .btn-icon { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 5px 9px; font-size: .85rem; cursor: pointer; }
+  .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger-icon { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 6px; padding: 5px 9px; font-size: .85rem; cursor: pointer; }
+  .btn-danger-icon:hover { border-color: var(--red); color: var(--red); }
+
+  /* ── Topbar action buttons ── */
+  .topbar-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: .85rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--text); transition: background .15s, border-color .15s; }
+  .topbar-btn:hover { background: var(--border); border-color: #555; }
+  .topbar-btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .topbar-btn-primary:hover { background: #388bfd; border-color: #388bfd; }
+  .topbar-btn-danger { color: #f87171; border-color: #4a1f1f; }
+  .topbar-btn-danger:hover { background: #2d1111; border-color: var(--red); color: #fc8181; }
+
+  /* ── Empty state ── */
+  .empty-state { text-align: center; padding: 48px; color: var(--muted); }
+  .empty-state i { font-size: 2.5rem; margin-bottom: 12px; display: block; }
+
+  /* ── Modal overlay ── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,.5); }
+  .modal-box.modal-lg { width: 700px; }
+  .modal-head { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-head h5 { margin: 0; font-size: 1rem; font-weight: 600; }
+  .modal-body { padding: 24px; }
+  .modal-foot { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+  .close-btn { background: none; border: none; color: var(--muted); font-size: 1.2rem; cursor: pointer; line-height: 1; }
+  .close-btn:hover { color: var(--text); }
+
+  /* ── Form ── */
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; }
+  .form-group input, .form-group select {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 8px 12px; font-size: .88rem; outline: none;
+  }
+  .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+  .form-group .hint { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-check { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .88rem; }
+  .form-check input[type=checkbox] { width: auto; accent-color: var(--accent); }
+
+  /* ── Code / config ── */
+  .config-box { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: monospace; font-size: .82rem; white-space: pre; overflow-x: auto; color: #a5d6ff; line-height: 1.6; }
+  .qr-wrap { text-align: center; margin-top: 16px; }
+  .qr-wrap img { border-radius: 8px; background: #fff; padding: 8px; max-width: 240px; }
+
+  /* ── Tabs ── */
+  .tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 16px; font-size: .88rem; cursor: pointer; margin-bottom: -1px; }
+  .tab-btn.active { border-bottom-color: var(--accent); color: var(--accent); }
+
+  /* ── Toast ── */
+  .toast-wrap { position: fixed; top: 16px; right: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+  .toast-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 18px; font-size: .88rem; min-width: 240px; display: flex; align-items: center; gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.4); animation: slideIn .2s ease; }
+  .toast-item.success { border-color: var(--green); }
+  .toast-item.error   { border-color: var(--red); }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+  /* ── Loader ── */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Tag ── */
+  .tag { display: inline-block; background: var(--border); border-radius: 4px; padding: 1px 7px; font-size: .75rem; color: var(--muted); font-family: monospace; }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .hide-sm { display: none; }
+    .form-row { grid-template-columns: 1fr; }
+    .iface-strip { gap: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Top bar ── -->
+<div class="topbar">
+  <div class="brand">
+    <i class="bi bi-shield-lock-fill"></i>
+    WireGuard Manager
+  </div>
+  <span id="ifaceLabel" class="iface-badge">wg0</span>
+  <span class="status-dot stopped" id="statusDot" title="Interface status"></span>
+  <span id="statusText" style="font-size:.85rem;color:var(--muted)">Checking…</span>
+  <div class="ms-auto" style="display:flex;gap:8px;align-items:center;">
+    <button class="topbar-btn" onclick="reloadInterface()">
+      <i class="bi bi-arrow-repeat"></i> 重载配置
+    </button>
+    <button class="topbar-btn topbar-btn-danger" onclick="restartInterface()">
+      <i class="bi bi-power"></i> 重启接口
+    </button>
+    <button class="topbar-btn" onclick="openSettingsModal()">
+      <i class="bi bi-gear"></i> 默认设置
+    </button>
+    <button class="topbar-btn topbar-btn-primary" onclick="openAddModal()">
+      <i class="bi bi-plus-lg"></i> 添加 Peer
+    </button>
+  </div>
+</div>
+
+<!-- ── Interface info strip ── -->
+<div class="iface-strip" id="ifaceStrip">
+  <div class="item">
+    <span class="label">Public Key</span>
+    <span class="val mono" id="iPublicKey">—</span>
+  </div>
+  <div class="item">
+    <span class="label">Listen Port</span>
+    <span class="val" id="iListenPort">—</span>
+  </div>
+  <div class="item">
+    <span class="label">Address</span>
+    <span class="val" id="iAddress">—</span>
+  </div>
+</div>
+
+<!-- ── Pending changes banner ── -->
+<div id="pendingBanner" style="display:none;background:#2d2000;border-bottom:1px solid #6e4c00;padding:10px 24px;display:none;align-items:center;gap:12px;font-size:.88rem">
+  <i class="bi bi-exclamation-circle" style="color:#e3a000"></i>
+  <span style="color:#e3a000;flex:1">配置已修改，尚未应用到运行中的接口。</span>
+  <button class="btn-wg" style="background:#b45309;padding:5px 14px" onclick="reloadInterface()">
+    <i class="bi bi-arrow-repeat"></i> 立即重载
+  </button>
+</div>
+
+<!-- ── Main ── -->
+<div class="main">
+  <div class="section-header">
+    <h5>Peers</h5>
+    <span class="peer-count" id="peerCount">0</span>
+    <button class="btn-icon" style="margin-left:auto" onclick="loadStatus()" title="Refresh">
+      <i class="bi bi-arrow-clockwise"></i>
+    </button>
+  </div>
+
+  <div id="peerTableWrap">
+    <table class="wg-table" id="peerTable" style="display:none">
+      <thead>
+        <tr>
+          <th>Name / Public Key</th>
+          <th>IP / AllowedIPs</th>
+          <th class="hide-sm">Endpoint</th>
+          <th class="hide-sm">Last Handshake</th>
+          <th class="hide-sm">Traffic ↓/↑</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="peerTbody"></tbody>
+    </table>
+    <div class="empty-state" id="emptyState">
+      <i class="bi bi-people"></i>
+      <div>No peers configured yet.</div>
+      <button class="btn-wg" style="margin-top:16px" onclick="openAddModal()">
+        <i class="bi bi-plus-lg"></i> Add first peer
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────────────────────────────
+     MODALS
+───────────────────────────────────────────────────────────────────────────── -->
+
+<!-- Add Peer Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h5><i class="bi bi-person-plus me-2"></i>Add Peer</h5>
+      <button class="close-btn" onclick="closeModal('addModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Mode toggle -->
+      <div class="tab-bar" style="margin-bottom:20px">
+        <button class="tab-btn active" id="modeGenBtn" onclick="setAddMode('generate')">自动生成密钥</button>
+        <button class="tab-btn" id="modeImportBtn" onclick="setAddMode('import')">使用已有公钥</button>
+      </div>
+
+      <div class="form-group">
+        <label>Peer Name (optional)</label>
+        <input type="text" id="addName" placeholder="e.g. My Phone">
+      </div>
+
+      <!-- Existing public key input (import mode only) -->
+      <div class="form-group" id="addPubkeyGroup" style="display:none">
+        <label>Client Public Key <span style="color:var(--red)">*</span></label>
+        <input type="text" id="addPubkey" placeholder="e.g. base64+encoded+pubkey=">
+        <div class="hint">粘贴客户端已有的 WireGuard 公钥</div>
+      </div>
+
+      <div class="form-group">
+        <label>Client Address <span style="color:var(--red)">*</span></label>
+        <input type="text" id="addClientIP" placeholder="e.g. 10.0.0.7">
+        <div class="hint">填客户端 IP 即可，如 <b>10.0.0.7</b> 或 <b>10.0.0.7/32</b>，子网会自动从服务器配置继承（/24）。服务端 AllowedIPs 自动设为 /32。</div>
+      </div>
+
+      <!-- Fields only relevant when generating config -->
+      <div id="addGenFields">
+        <div class="form-group">
+          <label>Server Endpoint <span style="color:var(--red)">*</span></label>
+          <input type="text" id="addEndpoint" placeholder="e.g. 1.2.3.4:51820 或 your.server.com">
+          <div class="hint">服务器公网地址和端口，填入客户端配置</div>
+        </div>
+        <div class="form-group">
+          <label>Client Routes（客户端路由范围）</label>
+          <input type="text" id="addRoutes" placeholder="留空则自动使用 VPN 子网，如 10.0.0.0/24">
+          <div class="hint">客户端配置中的 AllowedIPs，留空自动根据子网填写</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>DNS (for client)</label>
+            <input type="text" id="addDNS" placeholder="e.g. 1.1.1.1">
+          </div>
+          <div class="form-group">
+            <label>Persistent Keepalive</label>
+            <input type="text" id="addKeepalive" placeholder="e.g. 25">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-check">
+          <input type="checkbox" id="addPSK"> Use Preshared Key (extra security)
+        </label>
+      </div>
+      <div id="addError" style="color:var(--red);font-size:.85rem;display:none"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-icon" onclick="closeModal('addModal')">Cancel</button>
+      <button class="btn-wg" onclick="submitAddPeer()">
+        <span id="addSpinner" class="spinner" style="display:none"></span>
+        Generate &amp; Add
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Peer Modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h5><i class="bi bi-pencil me-2"></i>Edit Peer</h5>
+      <button class="close-btn" onclick="closeModal('editModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editPubkey">
+      <div class="form-group">
+        <label>Public Key</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <div id="editPubkeyDisplay" class="config-box" style="padding:8px 12px;font-size:.78rem;flex:1;word-break:break-all;white-space:normal;color:var(--muted)"></div>
+          <button class="btn-icon" style="flex-shrink:0" title="复制公钥" onclick="copyText(document.getElementById('editPubkey').value, this)">
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Peer Name</label>
+        <input type="text" id="editName" placeholder="Peer name">
+      </div>
+      <div class="form-group">
+        <label>AllowedIPs</label>
+        <input type="text" id="editAllowedIPs" placeholder="10.0.0.2/32">
+      </div>
+      <div class="form-group">
+        <label>Persistent Keepalive</label>
+        <input type="text" id="editKeepalive" placeholder="25 (leave blank to disable)">
+      </div>
+      <div id="editError" style="color:var(--red);font-size:.85rem;display:none"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-icon" onclick="closeModal('editModal')">Cancel</button>
+      <button class="btn-wg" onclick="submitEditPeer()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- View Config Modal -->
+<div class="modal-overlay" id="configModal">
+  <div class="modal-box modal-lg">
+    <div class="modal-head">
+      <h5><i class="bi bi-file-earmark-code me-2"></i>Client Config</h5>
+      <button class="close-btn" onclick="closeModal('configModal')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Key info block: only shown when newly generated -->
+      <div id="keyInfoBlock" style="display:none;margin-bottom:20px">
+        <div style="background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);border-radius:8px;padding:14px 16px">
+          <div style="font-size:.78rem;color:var(--accent);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">
+            <i class="bi bi-key-fill me-1"></i> 生成的密钥对
+          </div>
+          <div id="keyPrivRow" style="margin-bottom:8px">
+            <div style="font-size:.72rem;color:var(--muted);margin-bottom:3px">Private Key（客户端填写）</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <code id="keyPrivVal" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:.8rem;word-break:break-all;color:#ffa657"></code>
+              <button class="btn-icon" style="flex-shrink:0" onclick="copyText(document.getElementById('keyPrivVal').textContent,this)"><i class="bi bi-clipboard"></i></button>
+            </div>
+          </div>
+          <div id="keyPubRow" style="margin-bottom:8px">
+            <div style="font-size:.72rem;color:var(--muted);margin-bottom:3px">Public Key（服务端已登记）</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <code id="keyPubVal" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:.8rem;word-break:break-all;color:#3fb950"></code>
+              <button class="btn-icon" style="flex-shrink:0" onclick="copyText(document.getElementById('keyPubVal').textContent,this)"><i class="bi bi-clipboard"></i></button>
+            </div>
+          </div>
+          <div id="keyPskRow" style="display:none">
+            <div style="font-size:.72rem;color:var(--muted);margin-bottom:3px">Preshared Key</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <code id="keyPskVal" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 10px;font-size:.8rem;word-break:break-all;color:var(--muted)"></code>
+              <button class="btn-icon" style="flex-shrink:0" onclick="copyText(document.getElementById('keyPskVal').textContent,this)"><i class="bi bi-clipboard"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('tabConfig')" id="tabBtnConfig">Config File</button>
+        <button class="tab-btn" onclick="switchTab('tabQR')" id="tabBtnQR">QR Code</button>
+      </div>
+
+      <div id="tabConfig">
+        <pre class="config-box" id="configText"></pre>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn-icon" onclick="copyConfig()">
+            <i class="bi bi-clipboard"></i> Copy
+          </button>
+          <button class="btn-icon" onclick="downloadConfig()">
+            <i class="bi bi-download"></i> Download
+          </button>
+        </div>
+      </div>
+
+      <div id="tabQR" style="display:none">
+        <div class="qr-wrap">
+          <div id="qrLoading" class="spinner" style="margin:32px auto;display:block"></div>
+          <img id="qrImg" src="" alt="QR Code" style="display:none">
+          <div id="qrError" style="color:var(--red);display:none;margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal-box" style="width:420px">
+    <div class="modal-head">
+      <h5><i class="bi bi-exclamation-triangle me-2" style="color:var(--red)"></i>Delete Peer</h5>
+      <button class="close-btn" onclick="closeModal('deleteModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--muted);margin:0">Are you sure you want to delete peer:</p>
+      <div style="margin-top:12px">
+        <strong id="deletePeerName"></strong><br>
+        <span class="mono tag" id="deletePeerKey" style="font-size:.78rem"></span>
+      </div>
+      <p style="color:var(--muted);font-size:.85rem;margin-top:12px">
+        This will remove the peer from the config file and disconnect it immediately.
+      </p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-icon" onclick="closeModal('deleteModal')">Cancel</button>
+      <button class="btn-wg" style="background:var(--red)" onclick="confirmDelete()">
+        <i class="bi bi-trash3"></i> Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal-box" style="width:480px">
+    <div class="modal-head">
+      <h5><i class="bi bi-gear me-2"></i>默认设置</h5>
+      <button class="close-btn" onclick="closeModal('settingsModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--muted);font-size:.85rem;margin-top:0">
+        以下值会自动填入 Add Peer 表单，无需每次手动输入。
+      </p>
+      <div class="form-group">
+        <label>Server Endpoint（服务器公网地址）</label>
+        <input type="text" id="setEndpoint" placeholder="检测中…">
+        <div class="hint">客户端连接服务器用的公网 IP:Port</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Persistent Keepalive</label>
+          <input type="text" id="setKeepalive" placeholder="e.g. 25">
+        </div>
+        <div class="form-group">
+          <label>DNS</label>
+          <input type="text" id="setDNS" placeholder="e.g. 1.1.1.1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Client Routes（客户端路由范围）</label>
+        <input type="text" id="setRoutes" placeholder="留空则自动使用 VPN 子网">
+        <div class="hint">填 0.0.0.0/0 走全局代理，留空走 VPN 子网</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-icon" onclick="closeModal('settingsModal')">Cancel</button>
+      <button class="btn-wg" onclick="saveSettings()"><i class="bi bi-check-lg"></i> 保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let _peers = [];
+let _configPubkey = '';
+let _deletePubkey = '';
+let _refreshInterval = null;
+let _settings = {};
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadStatus();
+  _refreshInterval = setInterval(loadStatus, 15000);
+
+  // Close modals on overlay click
+  document.querySelectorAll('.modal-overlay').forEach(m => {
+    m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
+  });
+
+  // Keyboard close
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape')
+      document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+  });
+});
+
+// ─── Status / Peers ───────────────────────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const data = await apiFetch('/api/status');
+    updateInterface(data);
+    renderPeers(data.peers || []);
+  } catch (e) {
+    setStatus(false);
+    showToast('Failed to load status: ' + e.message, 'error');
+  }
+}
+
+function updateInterface(data) {
+  const iface = data.interface || {};
+  _settings = data.settings || {};
+  setStatus(data.running);
+  document.getElementById('ifaceLabel').textContent = iface.name || 'wg0';
+  document.getElementById('iPublicKey').textContent  = iface.public_key  ? truncKey(iface.public_key) : '—';
+  document.getElementById('iListenPort').textContent = iface.listen_port || '—';
+  document.getElementById('iAddress').textContent    = iface.Address || '—';
+}
+
+function setStatus(running) {
+  const dot  = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  dot.className  = 'status-dot ' + (running ? 'running' : 'stopped');
+  text.textContent = running ? 'Running' : 'Stopped';
+  text.style.color = running ? '#3fb950' : 'var(--red)';
+}
+
+function renderPeers(peers) {
+  _peers = peers;
+  const tbody = document.getElementById('peerTbody');
+  const table = document.getElementById('peerTable');
+  const empty = document.getElementById('emptyState');
+  document.getElementById('peerCount').textContent = peers.length;
+
+  if (!peers.length) {
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  table.style.display = 'table';
+  empty.style.display = 'none';
+
+  tbody.innerHTML = peers.map(p => `
+    <tr data-pubkey="${esc(p.PublicKey)}">
+      <td>
+        <div class="peer-name">${esc(p.name) || '<span style="color:var(--muted)">Unnamed</span>'}</div>
+        <div style="display:flex;align-items:center;gap:4px;margin-top:2px">
+          <span class="mono" title="${esc(p.PublicKey)}">${truncKey(p.PublicKey)}</span>
+          <button class="btn-icon" style="padding:2px 5px;font-size:.7rem" title="复制公钥"
+            onclick="copyText('${esc(p.PublicKey)}',this)"><i class="bi bi-clipboard"></i></button>
+        </div>
+      </td>
+      <td><span class="tag">${esc(p.AllowedIPs)}</span></td>
+      <td class="hide-sm mono">${p.endpoint ? esc(p.endpoint) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="hide-sm">
+        <span class="${p.online ? 'peer-online' : 'peer-offline'}">
+          <i class="bi bi-circle-fill" style="font-size:.5rem;vertical-align:middle"></i>
+          ${esc(p.latest_handshake_str)}
+        </span>
+      </td>
+      <td class="hide-sm mono" style="font-size:.78rem">
+        ↓ ${esc(p.transfer_rx_str)}<br>↑ ${esc(p.transfer_tx_str)}
+      </td>
+      <td style="white-space:nowrap;text-align:right">
+        ${p.has_config ? `<button class="btn-icon" onclick="openConfigModal('${esc(p.PublicKey)}')" title="View client config">
+          <i class="bi bi-file-earmark-code"></i>
+        </button>` : ''}
+        <button class="btn-icon" onclick="openEditModal('${esc(p.PublicKey)}')" title="Edit peer">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn-danger-icon" onclick="openDeleteModal('${esc(p.PublicKey)}')" title="Delete peer">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ─── Add Peer ─────────────────────────────────────────────────────────────────
+let _addMode = 'generate'; // 'generate' | 'import'
+
+function setAddMode(mode) {
+  _addMode = mode;
+  document.getElementById('modeGenBtn').className    = 'tab-btn' + (mode === 'generate' ? ' active' : '');
+  document.getElementById('modeImportBtn').className = 'tab-btn' + (mode === 'import'   ? ' active' : '');
+  document.getElementById('addPubkeyGroup').style.display = mode === 'import' ? 'block' : 'none';
+  document.getElementById('addGenFields').style.display   = mode === 'generate' ? 'block' : 'none';
+}
+
+function openAddModal() {
+  document.getElementById('addName').value      = '';
+  document.getElementById('addPubkey').value    = '';
+  document.getElementById('addClientIP').value  = '';
+  // Pre-fill from saved settings
+  document.getElementById('addEndpoint').value  = _settings.default_endpoint  || '';
+  document.getElementById('addRoutes').value    = _settings.default_routes    || '';
+  document.getElementById('addDNS').value       = _settings.default_dns       || '';
+  document.getElementById('addKeepalive').value = _settings.default_keepalive || '';
+  document.getElementById('addPSK').checked     = false;
+  document.getElementById('addError').style.display = 'none';
+  setAddMode('generate');
+  openModal('addModal');
+}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+function openSettingsModal() {
+  const epEl = document.getElementById('setEndpoint');
+  epEl.value       = _settings.default_endpoint  || '';
+  epEl.placeholder = _settings.default_endpoint  || '检测中…';
+  document.getElementById('setKeepalive').value = _settings.default_keepalive || '';
+  document.getElementById('setDNS').value       = _settings.default_dns       || '';
+  document.getElementById('setRoutes').value    = _settings.default_routes    || '';
+  openModal('settingsModal');
+}
+
+async function saveSettings() {
+  const body = {
+    default_endpoint:  document.getElementById('setEndpoint').value.trim(),
+    default_keepalive: document.getElementById('setKeepalive').value.trim(),
+    default_dns:       document.getElementById('setDNS').value.trim(),
+    default_routes:    document.getElementById('setRoutes').value.trim(),
+  };
+  try {
+    await apiFetch('/api/settings', { method: 'POST', body });
+    _settings = body;
+    closeModal('settingsModal');
+    showToast('设置已保存', 'success');
+  } catch (e) {
+    showToast('保存失败: ' + e.message, 'error');
+  }
+}
+
+async function submitAddPeer() {
+  document.getElementById('addError').style.display = 'none';
+
+  const client_ip = document.getElementById('addClientIP').value.trim();
+  if (!client_ip) { showFormError('addError', 'Client IP is required'); return; }
+
+  const body = {
+    name:      document.getElementById('addName').value.trim(),
+    client_ip,
+    use_psk:   document.getElementById('addPSK').checked,
+  };
+
+  if (_addMode === 'import') {
+    const pk = document.getElementById('addPubkey').value.trim();
+    if (!pk) { showFormError('addError', 'Public Key is required'); return; }
+    body.pubkey = pk;
+  } else {
+    body.server_endpoint = document.getElementById('addEndpoint').value.trim();
+    body.client_routes   = document.getElementById('addRoutes').value.trim();
+    body.dns             = document.getElementById('addDNS').value.trim();
+    body.keepalive       = document.getElementById('addKeepalive').value.trim();
+  }
+
+  setBusy('addSpinner', true);
+  try {
+    const data = await apiFetch('/api/peers', { method: 'POST', body });
+    closeModal('addModal');
+    showToast('Peer 已添加，点击「重载」生效', 'success');
+    setPending(true);
+    await loadStatus();
+
+    if (data.client_config) {
+      // Auto-generate mode: show keys + full config
+      _configPubkey = data.pubkey;
+      document.getElementById('configText').textContent = data.client_config;
+      resetConfigTabs();
+      showKeyInfo(data.privkey, data.pubkey, data.psk || null);
+      openModal('configModal');
+    } else if (data.psk) {
+      // Import mode with PSK: show the PSK
+      hideKeyInfo();
+      alert(`Peer added!\n\nPreshared Key (add to your client config):\n${data.psk}`);
+    }
+  } catch (e) {
+    showFormError('addError', e.message);
+  } finally {
+    setBusy('addSpinner', false);
+  }
+}
+
+// ─── Edit Peer ────────────────────────────────────────────────────────────────
+function openEditModal(pubkey) {
+  const peer = _peers.find(p => p.PublicKey === pubkey);
+  if (!peer) return;
+  document.getElementById('editPubkey').value          = pubkey;
+  document.getElementById('editPubkeyDisplay').textContent = pubkey;
+  document.getElementById('editName').value            = peer.name || '';
+  document.getElementById('editAllowedIPs').value      = peer.AllowedIPs || '';
+  document.getElementById('editKeepalive').value       = peer.PersistentKeepalive || '';
+  document.getElementById('editError').style.display  = 'none';
+  openModal('editModal');
+}
+
+async function submitEditPeer() {
+  const pubkey = document.getElementById('editPubkey').value;
+  const body = {
+    name:        document.getElementById('editName').value.trim(),
+    allowed_ips: document.getElementById('editAllowedIPs').value.trim(),
+    keepalive:   document.getElementById('editKeepalive').value.trim(),
+  };
+  try {
+    await apiFetch(`/api/peers/${encodeURIComponent(pubkey)}`, { method: 'PUT', body });
+    closeModal('editModal');
+    showToast('Peer 已修改，点击「重载」生效', 'success');
+    setPending(true);
+    loadStatus();
+  } catch (e) {
+    showFormError('editError', e.message);
+  }
+}
+
+// ─── Delete Peer ──────────────────────────────────────────────────────────────
+function openDeleteModal(pubkey) {
+  const peer = _peers.find(p => p.PublicKey === pubkey);
+  _deletePubkey = pubkey;
+  document.getElementById('deletePeerName').textContent = peer?.name || 'Unnamed';
+  document.getElementById('deletePeerKey').textContent  = truncKey(pubkey);
+  openModal('deleteModal');
+}
+
+async function confirmDelete() {
+  try {
+    await apiFetch(`/api/peers/${encodeURIComponent(_deletePubkey)}`, { method: 'DELETE' });
+    closeModal('deleteModal');
+    showToast('Peer 已删除，点击「重载」生效', 'success');
+    setPending(true);
+    loadStatus();
+  } catch (e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+// ─── Config / QR ──────────────────────────────────────────────────────────────
+async function openConfigModal(pubkey) {
+  _configPubkey = pubkey;
+  resetConfigTabs();
+  hideKeyInfo();
+  document.getElementById('configText').textContent = 'Loading…';
+  openModal('configModal');
+  try {
+    const data = await apiFetch(`/api/peers/${encodeURIComponent(pubkey)}/config`);
+    document.getElementById('configText').textContent = data.config;
+  } catch (e) {
+    document.getElementById('configText').textContent = 'Error: ' + e.message;
+  }
+}
+
+function showKeyInfo(privkey, pubkey, psk) {
+  document.getElementById('keyPrivVal').textContent = privkey || '';
+  document.getElementById('keyPubVal').textContent  = pubkey  || '';
+  document.getElementById('keyInfoBlock').style.display = 'block';
+  const pskRow = document.getElementById('keyPskRow');
+  if (psk) {
+    document.getElementById('keyPskVal').textContent = psk;
+    pskRow.style.display = 'block';
+  } else {
+    pskRow.style.display = 'none';
+  }
+}
+
+function hideKeyInfo() {
+  document.getElementById('keyInfoBlock').style.display = 'none';
+}
+
+function switchTab(tab) {
+  document.getElementById('tabConfig').style.display = tab === 'tabConfig' ? 'block' : 'none';
+  document.getElementById('tabQR').style.display     = tab === 'tabQR'     ? 'block' : 'none';
+  document.getElementById('tabBtnConfig').className  = 'tab-btn' + (tab === 'tabConfig' ? ' active' : '');
+  document.getElementById('tabBtnQR').className      = 'tab-btn' + (tab === 'tabQR'     ? ' active' : '');
+
+  if (tab === 'tabQR') loadQR();
+}
+
+function resetConfigTabs() {
+  switchTab('tabConfig');
+  document.getElementById('qrImg').style.display     = 'none';
+  document.getElementById('qrLoading').style.display = 'none';
+  document.getElementById('qrError').style.display   = 'none';
+}
+
+function loadQR() {
+  const img   = document.getElementById('qrImg');
+  const spin  = document.getElementById('qrLoading');
+  const errEl = document.getElementById('qrError');
+  img.style.display  = 'none';
+  errEl.style.display= 'none';
+  spin.style.display = 'block';
+  img.src = `/api/peers/${encodeURIComponent(_configPubkey)}/qr?t=${Date.now()}`;
+  img.onload  = () => { spin.style.display = 'none'; img.style.display = 'block'; };
+  img.onerror = () => {
+    spin.style.display = 'none';
+    errEl.textContent  = 'QR code unavailable (install qrcode[pil] on the server)';
+    errEl.style.display= 'block';
+  };
+}
+
+function copyConfig() {
+  const text = document.getElementById('configText').textContent;
+  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard', 'success'));
+}
+
+function downloadConfig() {
+  const text  = document.getElementById('configText').textContent;
+  const peer  = _peers.find(p => p.PublicKey === _configPubkey);
+  const name  = (peer?.name || _configPubkey.slice(0, 8)).replace(/\s+/g, '_');
+  const blob  = new Blob([text], { type: 'text/plain' });
+  const a     = document.createElement('a');
+  a.href      = URL.createObjectURL(blob);
+  a.download  = `${name}.conf`;
+  a.click();
+}
+
+// ─── Pending changes ──────────────────────────────────────────────────────────
+function setPending(on) {
+  document.getElementById('pendingBanner').style.display = on ? 'flex' : 'none';
+}
+
+// ─── Interface Reload / Restart ───────────────────────────────────────────────
+async function reloadInterface() {
+  try {
+    await apiFetch('/api/interface/reload', { method: 'POST' });
+    setPending(false);
+    showToast('配置已重载，连接不受影响', 'success');
+    setTimeout(loadStatus, 1000);
+  } catch (e) {
+    showToast('重载失败: ' + e.message, 'error');
+  }
+}
+
+async function restartInterface() {
+  if (!confirm('重启 WireGuard 接口？所有连接会短暂断开。')) return;
+  try {
+    await apiFetch('/api/interface/restart', { method: 'POST' });
+    setPending(false);
+    showToast('接口已重启', 'success');
+    setTimeout(loadStatus, 2000);
+  } catch (e) {
+    showToast('重启失败: ' + e.message, 'error');
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+function showFormError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent   = msg;
+  el.style.display = 'block';
+}
+
+function setBusy(spinnerId, busy) {
+  document.getElementById(spinnerId).style.display = busy ? 'inline-block' : 'none';
+}
+
+function truncKey(k) {
+  if (!k) return '—';
+  return k.length > 20 ? k.slice(0, 10) + '…' + k.slice(-6) : k;
+}
+
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('已复制到剪贴板', 'success');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+      setTimeout(() => { btn.innerHTML = orig; }, 1500);
+    }
+  });
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function showToast(msg, type = 'success') {
+  const wrap = document.getElementById('toastWrap');
+  const el   = document.createElement('div');
+  el.className = `toast-item ${type}`;
+  el.innerHTML = `<i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-circle'}" style="color:var(--${type === 'success' ? 'green' : 'red'})"></i>${esc(msg)}`;
+  wrap.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+async function apiFetch(url, opts = {}) {
+  const options = {
+    method:  opts.method || 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (opts.body) options.body = JSON.stringify(opts.body);
+  const res  = await fetch(url, options);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
