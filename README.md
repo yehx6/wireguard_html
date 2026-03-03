@@ -145,6 +145,12 @@ sudo systemctl daemon-reload
 - 需要 root 权限运行（wg 命令要求）
 - 客户端私钥保存在服务器 `/etc/wireguard/clients/`，注意保护该目录
 
+## 联系作者
+
+有问题或建议，欢迎通过微信联系：
+
+<img src="wechat.jpg" width="200" alt="微信二维码" />
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=yehx6/wireguard_html&type=Date)](https://star-history.com/#yehx6/wireguard_html&Date)
