@@ -146,6 +146,13 @@ class WgConfig:
         end = idx + 1
         while end < len(self.lines) and not self.lines[end].strip().startswith('['):
             end += 1
+        # Walk back to exclude trailing blank lines and the next peer's # name comment
+        while end > idx + 1:
+            prev = self.lines[end - 1].strip()
+            if prev == '' or prev.startswith('#'):
+                end -= 1
+            else:
+                break
         start = idx
         if start > 0 and self.lines[start - 1].strip().startswith('#'):
             start -= 1
@@ -222,8 +229,14 @@ def get_live_data():
 
 SETTINGS_PATH = WG_CONFIG_DIR / 'wg-manager-settings.json'
 
+_smart_defaults_cache = None
+
 def _smart_defaults():
-    """Auto-detect sensible defaults from system."""
+    """Auto-detect sensible defaults from system. Cached after first call."""
+    global _smart_defaults_cache
+    if _smart_defaults_cache is not None:
+        return _smart_defaults_cache
+
     cfg  = WgConfig(WG_CONFIG_DIR / f'{WG_INTERFACE}.conf')
     port = cfg.interface().get('ListenPort', '51820')
 
@@ -238,12 +251,13 @@ def _smart_defaults():
             break
 
     endpoint = f'{public_ip}:{port}' if public_ip else f'YOUR_SERVER_IP:{port}'
-    return {
+    _smart_defaults_cache = {
         'default_endpoint':  endpoint,
         'default_keepalive': '25',
         'default_dns':       '',
         'default_routes':    '',
     }
+    return _smart_defaults_cache
 
 def load_settings():
     saved = {}
@@ -283,7 +297,8 @@ def post_settings():
 
 def _client_path(pubkey):
     CLIENTS_DIR.mkdir(parents=True, exist_ok=True)
-    return CLIENTS_DIR / f'{pubkey[:16]}.conf'
+    safe = pubkey[:16].replace('/', '_').replace('+', '-')
+    return CLIENTS_DIR / f'{safe}.conf'
 
 
 def save_client_config(pubkey, text):
@@ -428,10 +443,21 @@ def add_peer():
         cfg       = WgConfig(WG_CONFIG_DIR / f'{WG_INTERFACE}.conf')
         iface_cfg = cfg.interface()
 
+        # Check for duplicate PublicKey
+        existing_peers = cfg.peers()
+        existing_keys = {p.get('PublicKey') for p in existing_peers}
+        if pubkey in existing_keys:
+            return jsonify({'error': 'A peer with this PublicKey already exists'}), 400
+
         # Derive server-side AllowedIPs and client-side address/routes
         # Uses server's Address subnet to fix up bare IPs or /32 inputs
         server_address = iface_cfg.get('Address', '')
         client_addr, server_allowed, client_routes = derive_ips(client_ip, server_address)
+
+        # Check for duplicate AllowedIPs
+        existing_ips = {p.get('AllowedIPs') for p in existing_peers}
+        if server_allowed in existing_ips:
+            return jsonify({'error': f'AllowedIPs {server_allowed} is already assigned to another peer'}), 400
         # Allow manual override: form → saved default → auto-derived
         override = (d.get('client_routes') or settings.get('default_routes') or '').strip()
         if override:
